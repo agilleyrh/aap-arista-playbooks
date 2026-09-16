@@ -1,0 +1,8 @@
+---
+# Certified collection used to create AAP job templates and the workflow.
+# Run aap/setup.yml with the supported or control-plane execution environment.
+#
+#   ansible.controller  https://catalog.redhat.com/software/collection/ansible/controller
+collections:
+  - name: ansible.controller
+    source: https://console.redhat.com/api/automation-hub/content/published/

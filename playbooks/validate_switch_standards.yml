@@ -1,0 +1,146 @@
+---
+- name: Validate Arista switches against standards
+  hosts: "{{ target_hosts | default('arista_switches') }}"
+  gather_facts: false
+  vars_files:
+    - "{{ playbook_dir }}/../vars/switch_standards.yml"
+  vars:
+    expected_servers: "{{ expected_servers | default([]) }}"
+
+  tasks:
+    - name: Gather EOS facts
+      arista.eos.eos_facts:
+        gather_subset:
+          - min
+        gather_network_resources:
+          - hostname
+          - l2_interfaces
+          - lldp_global
+          - vlans
+          - ntp_global
+          - logging_global
+          - banner
+
+    - name: Collect show commands as JSON
+      arista.eos.eos_command:
+        commands:
+          - command: show version
+            output: json
+          - command: show lldp neighbors
+            output: json
+          - command: show interfaces status
+            output: json
+          - command: show mac address-table
+            output: json
+      register: arista_show
+
+    - name: Capture current values
+      ansible.builtin.set_fact:
+        current_hostname: "{{ ansible_net_hostname | default(ansible_network_resources.hostname.hostname | default(inventory_hostname)) }}"
+        current_model: "{{ ansible_net_model | default(arista_show.stdout[0].modelName | default('unknown')) }}"
+        current_serial: "{{ ansible_net_serialnum | default(arista_show.stdout[0].serialNumber | default('unknown')) }}"
+        current_eos_version: "{{ ansible_net_version | default(arista_show.stdout[0].version | default('0.0.0')) }}"
+        current_eos_numeric: "{{ (ansible_net_version | default(arista_show.stdout[0].version | default('0.0.0'))) | regex_search('^[0-9]+(\\.[0-9]+)*') }}"
+        current_lldp_enabled: "{{ ansible_network_resources.lldp_global.enable | default(false) }}"
+        current_ntp: "{{ (ansible_network_resources.ntp_global.servers | default([])) | map(attribute='server') | list }}"
+        current_vlans: "{{ (ansible_network_resources.vlans | default([])) | map(attribute='vlan_id') | list }}"
+        current_logging: "{{ (ansible_network_resources.logging_global.hosts | default([])) | map(attribute='host') | list }}"
+        current_motd: "{{ ansible_network_resources.banner.motd | default('') }}"
+        current_lldp: "{{ arista_show.stdout[1].lldpNeighbors | default([]) }}"
+        current_intf_status: "{{ arista_show.stdout[2].interfaceStatuses | default({}) }}"
+        current_macs: "{{ arista_show.stdout[3].unicastTable.tableEntries | default(arista_show.stdout[3].unicastUnicastEntries | default([])) }}"
+        current_l2: "{{ ansible_network_resources.l2_interfaces | default([]) }}"
+
+    - name: Check hostname, EOS version, LLDP, NTP, VLANs, logging, and MOTD
+      ansible.builtin.set_fact:
+        failed_checks: "{{ failed_checks | default([]) + extra_fails }}"
+      vars:
+        extra_fails: "{{
+          ([{'id': 'hostname_pattern', 'expected': switch_standards.hostname_pattern, 'actual': current_hostname}]
+            if current_hostname is not match(switch_standards.hostname_pattern) else [])
+          + ([{'id': 'min_eos_version', 'expected': switch_standards.min_eos_version, 'actual': current_eos_version}]
+            if current_eos_numeric is not version(switch_standards.min_eos_version, '>=') else [])
+          + ([{'id': 'lldp_enabled', 'expected': switch_standards.lldp_enabled, 'actual': current_lldp_enabled}]
+            if (current_lldp_enabled | bool) != (switch_standards.lldp_enabled | bool) else [])
+          + ([{'id': 'ntp_servers', 'expected': switch_standards.ntp_servers, 'actual': current_ntp}]
+            if (switch_standards.ntp_servers | difference(current_ntp) | length) > 0 else [])
+          + ([{'id': 'required_vlans', 'expected': switch_standards.required_vlans, 'actual': current_vlans}]
+            if (switch_standards.required_vlans | map('string') | list | difference(current_vlans | map('string') | list) | length) > 0 else [])
+          + ([{'id': 'logging_hosts', 'expected': switch_standards.logging_hosts, 'actual': current_logging}]
+            if (switch_standards.logging_hosts | difference(current_logging) | length) > 0 else [])
+          + ([{'id': 'motd_banner', 'expected': 'present', 'actual': 'missing'}]
+            if (switch_standards.require_motd_banner | bool) and (current_motd | length == 0) else [])
+        }}"
+
+    - name: Check each expected bare-metal server
+      ansible.builtin.set_fact:
+        failed_checks: "{{ failed_checks | default([]) + extra_fails }}"
+      vars:
+        intf_key: "{{ item.switch_port }}"
+        intf_short: "{{ item.switch_port | regex_replace('^Ethernet', 'Et') }}"
+        observed_status: "{{ current_intf_status[intf_key] | default(current_intf_status[intf_short] | default({})) }}"
+        observed_link: "{{ observed_status.linkStatus | default(observed_status.status | default('missing')) }}"
+        observed_desc: "{{ observed_status.description | default(observed_status.interfaceDescription | default('')) }}"
+        observed_l2: "{{ current_l2 | selectattr('name', 'equalto', item.switch_port) | list | first | default({}) }}"
+        observed_vlan: "{{ observed_l2.access.vlan | default(observed_status.vlanInformation.vlanId | default('')) }}"
+        observed_lldp: "{{ current_lldp | selectattr('port', 'defined') | selectattr('port', 'search', intf_short ~ '$') | list | first | default({}) }}"
+        observed_neighbor: "{{ observed_lldp.neighborDevice | default('none') }}"
+        observed_macs: "{{ current_macs | selectattr('interface', 'defined') | selectattr('interface', 'search', intf_short ~ '$') | map(attribute='macAddress') | list }}"
+        extra_fails: "{{
+          ([{'id': 'server_port_up_' ~ item.name, 'expected': item.switch_port ~ ' up', 'actual': observed_link}]
+            if observed_link not in ['connected', 'up'] else [])
+          + ([{'id': 'server_port_description_' ~ item.name, 'expected': item.description | default(item.name), 'actual': observed_desc}]
+            if (switch_standards.require_interface_description | bool) and ((item.description | default(item.name)) not in observed_desc) else [])
+          + ([{'id': 'server_vlan_' ~ item.name, 'expected': item.vlan, 'actual': observed_vlan}]
+            if item.vlan is defined and (item.vlan | string) != (observed_vlan | string) else [])
+          + ([{'id': 'server_lldp_' ~ item.name, 'expected': item.lldp_system_name | default(item.name), 'actual': observed_neighbor}]
+            if (item.lldp_system_name | default(item.name)) not in observed_neighbor else [])
+          + ([{'id': 'server_mac_' ~ item.name, 'expected': item.mac, 'actual': observed_macs}]
+            if item.mac is defined and (item.mac | lower) not in (observed_macs | map('lower') | list) else [])
+        }}"
+      loop: "{{ expected_servers }}"
+      loop_control:
+        label: "{{ item.name }} on {{ item.switch_port }}"
+
+    - name: Assemble compliance report
+      ansible.builtin.set_fact:
+        compliance_passed: "{{ (failed_checks | default([]) | length) == 0 }}"
+        compliance_report:
+          inventory_hostname: "{{ inventory_hostname }}"
+          hostname: "{{ current_hostname }}"
+          model: "{{ current_model }}"
+          serial: "{{ current_serial }}"
+          eos_version: "{{ current_eos_version }}"
+          passed: "{{ (failed_checks | default([]) | length) == 0 }}"
+          failed_checks: "{{ failed_checks | default([]) }}"
+          current_config:
+            ntp_servers: "{{ current_ntp }}"
+            vlans: "{{ current_vlans }}"
+            lldp_enabled: "{{ current_lldp_enabled }}"
+            logging_hosts: "{{ current_logging }}"
+            lldp_neighbors: "{{ current_lldp | ansible.utils.json_query('[].{port: port, neighbor_device: neighborDevice}') }}"
+          collected_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+
+    - name: Show compliance result
+      ansible.builtin.debug:
+        msg:
+          hostname: "{{ inventory_hostname }}"
+          passed: "{{ compliance_passed }}"
+          failed_checks: "{{ failed_checks | default([]) | map(attribute='id') | list }}"
+
+    - name: Publish compliance artifacts for later workflow nodes
+      ansible.builtin.set_stats:
+        aggregate: true
+        data:
+          compliance_reports: "{{ { inventory_hostname: compliance_report } }}"
+          compliance_failed_hosts: "{{ [inventory_hostname] if not compliance_passed else [] }}"
+
+    - name: Fail the job template when the switch is out of compliance
+      ansible.builtin.assert:
+        that:
+          - compliance_passed
+        fail_msg: >-
+          {{ inventory_hostname }} failed compliance checks:
+          {{ failed_checks | default([]) | map(attribute='id') | list | join(', ') }}
+        success_msg: "{{ inventory_hostname }} matches defined switch standards"
+      when: compliance_fail_on_violation | bool

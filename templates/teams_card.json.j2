@@ -1,0 +1,106 @@
+{
+  "type": "message",
+  "attachments": [
+    {
+      "contentType": "application/vnd.microsoft.card.adaptive",
+      "contentUrl": null,
+      "content": {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "body": [
+          {
+            "type": "TextBlock",
+            "size": "Large",
+            "weight": "Bolder",
+            "text": "Arista switch compliance"
+          },
+          {
+            "type": "TextBlock",
+            "wrap": true,
+            "color": "{{ 'good' if teams_passed | bool else 'attention' }}",
+            "text": "{{ 'All checked switches match the defined standards.' if teams_passed | bool else 'One or more switches are out of compliance.' }}"
+          },
+          {
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "Status",
+                "value": "{{ 'PASS' if teams_passed | bool else 'FAIL' }}"
+              },
+              {
+                "title": "Switches checked",
+                "value": "{{ teams_checked_count }}"
+              },
+              {
+                "title": "Failed switches",
+                "value": "{{ teams_failed_hosts | join(', ') if teams_failed_hosts else 'none' }}"
+              },
+              {
+                "title": "Collected",
+                "value": "{{ teams_collected_at }}"
+              }
+            ]
+          }
+{% for hostname in teams_switch_names %}
+{% set report = compliance_reports[hostname] | default({}) %}
+{% set snapshot = config_snapshots[hostname] | default(report.current_config | default({})) %}
+          ,{
+            "type": "Container",
+            "separator": true,
+            "items": [
+              {
+                "type": "TextBlock",
+                "weight": "Bolder",
+                "text": "{{ hostname }} — {{ 'PASS' if (report.passed | default(true)) else 'FAIL' }}"
+              },
+              {
+                "type": "FactSet",
+                "facts": [
+                  {
+                    "title": "Hostname",
+                    "value": "{{ report.hostname | default(snapshot.hostname | default(hostname)) }}"
+                  },
+                  {
+                    "title": "Model",
+                    "value": "{{ report.model | default(snapshot.model | default('n/a')) }}"
+                  },
+                  {
+                    "title": "EOS",
+                    "value": "{{ report.eos_version | default(snapshot.eos_version | default('n/a')) }}"
+                  },
+                  {
+                    "title": "NTP",
+                    "value": "{{ (snapshot.ntp_servers | default(report.current_config.ntp_servers | default([]))) | join(', ') | default('n/a', true) }}"
+                  },
+                  {
+                    "title": "VLANs",
+                    "value": "{{ (snapshot.vlans | default(report.current_config.vlans | default([]))) | join(', ') }}"
+                  },
+                  {
+                    "title": "LLDP neighbors",
+                    "value": "{{ (snapshot.lldp_neighbors | default(report.current_config.lldp_neighbors | default([]))) | map(attribute='neighbor_device') | list | join(', ') | default('none', true) }}"
+                  }
+                ]
+              }
+{% if report.failed_checks | default([]) %}
+              ,{
+                "type": "TextBlock",
+                "weight": "Bolder",
+                "color": "attention",
+                "text": "Failed checks"
+              },
+              {
+                "type": "TextBlock",
+                "wrap": true,
+                "text": "{% for item in report.failed_checks | default([]) | batch(8) | first %}• {{ item.id }}: expected `{{ item.expected }}`, actual `{{ item.actual }}`{% if not loop.last %}\n{% endif %}{% endfor %}"
+              }
+{% endif %}
+            ]
+          }
+{% endfor %}
+        ]
+      }
+    }
+  ]
+}

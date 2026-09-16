@@ -1,0 +1,2 @@
+# System packages for the execution environment
+openssh-clients [platform:rpm]

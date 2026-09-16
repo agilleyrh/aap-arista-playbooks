@@ -1,0 +1,4 @@
+# Python libraries required by certified network collections in the EE.
+paramiko
+netaddr
+jmespath

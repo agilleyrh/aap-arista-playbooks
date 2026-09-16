@@ -1,0 +1,62 @@
+---
+- name: Gather current Arista switch configuration
+  hosts: "{{ target_hosts | default('arista_switches') }}"
+  gather_facts: false
+  vars_files:
+    - "{{ playbook_dir }}/../vars/switch_standards.yml"
+
+  tasks:
+    - name: Gather EOS facts
+      arista.eos.eos_facts:
+        gather_subset:
+          - min
+        gather_network_resources:
+          - hostname
+          - interfaces
+          - l2_interfaces
+          - lldp_global
+          - vlans
+          - ntp_global
+          - logging_global
+          - banner
+
+    - name: Collect show commands as JSON
+      arista.eos.eos_command:
+        commands:
+          - command: show version
+            output: json
+          - command: show lldp neighbors
+            output: json
+      register: arista_show
+
+    - name: Build a compact snapshot for the AAP workflow
+      ansible.builtin.set_fact:
+        config_snapshot:
+          inventory_hostname: "{{ inventory_hostname }}"
+          hostname: "{{ ansible_net_hostname | default(ansible_network_resources.hostname.hostname | default(inventory_hostname)) }}"
+          model: "{{ ansible_net_model | default(arista_show.stdout[0].modelName | default('unknown')) }}"
+          serial: "{{ ansible_net_serialnum | default(arista_show.stdout[0].serialNumber | default('unknown')) }}"
+          eos_version: "{{ ansible_net_version | default(arista_show.stdout[0].version | default('unknown')) }}"
+          lldp_enabled: "{{ ansible_network_resources.lldp_global.enable | default(false) }}"
+          ntp_servers: "{{ (ansible_network_resources.ntp_global.servers | default([])) | map(attribute='server') | list }}"
+          vlans: "{{ (ansible_network_resources.vlans | default([])) | map(attribute='vlan_id') | list }}"
+          logging_hosts: "{{ (ansible_network_resources.logging_global.hosts | default([])) | map(attribute='host') | list }}"
+          motd_banner: "{{ ansible_network_resources.banner.motd | default('') }}"
+          lldp_neighbors: "{{ arista_show.stdout[1].lldpNeighbors | default([]) | ansible.utils.json_query('[].{port: port, neighbor_device: neighborDevice}') }}"
+          collected_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+
+    - name: Show current config summary
+      ansible.builtin.debug:
+        msg:
+          hostname: "{{ config_snapshot.hostname }}"
+          model: "{{ config_snapshot.model }}"
+          eos_version: "{{ config_snapshot.eos_version }}"
+          ntp_servers: "{{ config_snapshot.ntp_servers }}"
+          vlans: "{{ config_snapshot.vlans }}"
+          lldp_neighbors: "{{ config_snapshot.lldp_neighbors }}"
+
+    - name: Publish snapshot for later workflow nodes
+      ansible.builtin.set_stats:
+        aggregate: true
+        data:
+          config_snapshots: "{{ { inventory_hostname: config_snapshot } }}"

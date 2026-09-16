@@ -1,0 +1,14 @@
+---
+all:
+  children:
+    arista_switches:
+      hosts:
+        leaf-01.dc1.example.com:
+          ansible_host: 192.0.2.11
+        leaf-02.dc1.example.com:
+          ansible_host: 192.0.2.12
+      vars:
+        ansible_connection: ansible.netcommon.network_cli
+        ansible_network_os: arista.eos.eos
+        ansible_become: true
+        ansible_become_method: enable

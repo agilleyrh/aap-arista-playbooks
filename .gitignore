@@ -1,0 +1,31 @@
+# Ansible
+*.retry
+.vault_pass
+vault-password
+inventory/hosts.yml
+inventory/host_vars/*.yml
+!inventory/host_vars/*.example.yml
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Collections / EE build artifacts
+collections/
+.ansible/
+context/
+*.tar.gz
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
