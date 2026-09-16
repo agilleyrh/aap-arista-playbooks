@@ -33,8 +33,8 @@ config and compliance results into the Teams job.
 
 | Collection | Catalog | Used for |
 | --- | --- | --- |
-| [arista.eos](https://catalog.redhat.com/software/collection/arista/eos) | Certified | `eos_facts`, `eos_command` |
-| [ansible.netcommon](https://catalog.redhat.com/software/collection/ansible/netcommon) | Certified | `network_cli` |
+| [arista.eos](https://catalog.redhat.com/software/collection/arista/eos) | Certified | `eos_command` |
+| [ansible.netcommon](https://catalog.redhat.com/software/collection/ansible/netcommon) | Certified | `network_cli` / Paramiko |
 | [ansible.utils](https://catalog.redhat.com/software/collection/ansible/utils) | Certified | `json_query` |
 | [ansible.controller](https://catalog.redhat.com/software/collection/ansible/controller) | Certified | `aap/setup.yml` on the supported EE |
 
@@ -64,9 +64,12 @@ Push the image to the registry AAP uses, then set `aap_ee_name` to that EE.
 
 ## Controller objects
 
-1. Create a **Network** credential for EOS.
+1. Create a **Network** credential for EOS (username + password, check **Authorize**
+   if you need enable mode). Do not use a Machine/SSH-key credential.
 2. Create a **Microsoft Teams Webhook** credential (`aap/setup.yml` creates the type).
 3. Add switches to group `arista_switches` with `expected_servers` host vars.
+   On that group set `ansible_network_cli_ssh_type: paramiko` and
+   `ansible_paramiko_look_for_keys: false` (already in `aap/setup.yml` / example group_vars).
 4. Run `aap/setup.yml` with a Controller credential:
 
 ```bash
@@ -80,6 +83,16 @@ ansible-playbook aap/setup.yml \
   -e aap_teams_credential='Teams Arista Alerts' \
   -e aap_ee_name='Arista EE'
 ```
+
+## SSH and gather errors
+
+| Symptom | Cause | What to do |
+| --- | --- | --- |
+| `Connection refused` | Execution node cannot reach SSH on the switch | Confirm `ansible_host`, TCP 22 (or `ansible_port`), routing, and that SSH is enabled |
+| `Access denied for 'none'` / `publickey,keyboard-interactive` | libssh tried a key (or no password) | Attach an AAP **Network** credential with password; keep `ansible_network_cli_ssh_type: paramiko` and `ansible_paramiko_look_for_keys: false` on the inventory group |
+| `wait_for ... got: wait-install` or `neighbor_address` / `peer` warnings | `eos_facts` parsed BGP running-config | Do not set `gather_subset: all`. These playbooks use `eos_command` show output only |
+
+If the group was created in the AAP UI before this change, update the group variables there too — Controller inventory vars override the git examples.
 
 ## License
 

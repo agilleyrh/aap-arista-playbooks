@@ -6,43 +6,22 @@
     - "{{ playbook_dir }}/../vars/switch_standards.yml"
 
   tasks:
-    - name: Gather EOS facts
-      arista.eos.eos_facts:
-        gather_subset:
-          - min
-        gather_network_resources:
-          - hostname
-          - interfaces
-          - l2_interfaces
-          - lldp_global
-          - vlans
-          - ntp_global
-          - logging_global
-          - banner
-
-    - name: Collect show commands as JSON
-      arista.eos.eos_command:
-        commands:
-          - command: show version
-            output: json
-          - command: show lldp neighbors
-            output: json
-      register: arista_show
+    - name: Collect switch state with show commands
+      ansible.builtin.include_tasks: tasks/collect_switch_state.yml
 
     - name: Build a compact snapshot for the AAP workflow
       ansible.builtin.set_fact:
         config_snapshot:
           inventory_hostname: "{{ inventory_hostname }}"
-          hostname: "{{ ansible_net_hostname | default(ansible_network_resources.hostname.hostname | default(inventory_hostname)) }}"
-          model: "{{ ansible_net_model | default(arista_show.stdout[0].modelName | default('unknown')) }}"
-          serial: "{{ ansible_net_serialnum | default(arista_show.stdout[0].serialNumber | default('unknown')) }}"
-          eos_version: "{{ ansible_net_version | default(arista_show.stdout[0].version | default('unknown')) }}"
-          lldp_enabled: "{{ ansible_network_resources.lldp_global.enable | default(false) }}"
-          ntp_servers: "{{ (ansible_network_resources.ntp_global.servers | default([])) | map(attribute='server') | list }}"
-          vlans: "{{ (ansible_network_resources.vlans | default([])) | map(attribute='vlan_id') | list }}"
-          logging_hosts: "{{ (ansible_network_resources.logging_global.hosts | default([])) | map(attribute='host') | list }}"
-          motd_banner: "{{ ansible_network_resources.banner.motd | default('') }}"
-          lldp_neighbors: "{{ arista_show.stdout[1].lldpNeighbors | default([]) | ansible.utils.json_query('[].{port: port, neighbor_device: neighborDevice}') }}"
+          hostname: "{{ current_hostname }}"
+          model: "{{ current_model }}"
+          serial: "{{ current_serial }}"
+          eos_version: "{{ current_eos_version }}"
+          lldp_enabled: "{{ current_lldp_enabled }}"
+          ntp_servers: "{{ current_ntp }}"
+          vlans: "{{ current_vlans }}"
+          logging_hosts: "{{ current_logging }}"
+          lldp_neighbors: "{{ current_lldp | ansible.utils.json_query('[].{port: port, neighbor_device: neighborDevice}') }}"
           collected_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
 
     - name: Show current config summary

@@ -8,48 +8,8 @@
     expected_servers: "{{ expected_servers | default([]) }}"
 
   tasks:
-    - name: Gather EOS facts
-      arista.eos.eos_facts:
-        gather_subset:
-          - min
-        gather_network_resources:
-          - hostname
-          - l2_interfaces
-          - lldp_global
-          - vlans
-          - ntp_global
-          - logging_global
-          - banner
-
-    - name: Collect show commands as JSON
-      arista.eos.eos_command:
-        commands:
-          - command: show version
-            output: json
-          - command: show lldp neighbors
-            output: json
-          - command: show interfaces status
-            output: json
-          - command: show mac address-table
-            output: json
-      register: arista_show
-
-    - name: Capture current values
-      ansible.builtin.set_fact:
-        current_hostname: "{{ ansible_net_hostname | default(ansible_network_resources.hostname.hostname | default(inventory_hostname)) }}"
-        current_model: "{{ ansible_net_model | default(arista_show.stdout[0].modelName | default('unknown')) }}"
-        current_serial: "{{ ansible_net_serialnum | default(arista_show.stdout[0].serialNumber | default('unknown')) }}"
-        current_eos_version: "{{ ansible_net_version | default(arista_show.stdout[0].version | default('0.0.0')) }}"
-        current_eos_numeric: "{{ (ansible_net_version | default(arista_show.stdout[0].version | default('0.0.0'))) | regex_search('^[0-9]+(\\.[0-9]+)*') }}"
-        current_lldp_enabled: "{{ ansible_network_resources.lldp_global.enable | default(false) }}"
-        current_ntp: "{{ (ansible_network_resources.ntp_global.servers | default([])) | map(attribute='server') | list }}"
-        current_vlans: "{{ (ansible_network_resources.vlans | default([])) | map(attribute='vlan_id') | list }}"
-        current_logging: "{{ (ansible_network_resources.logging_global.hosts | default([])) | map(attribute='host') | list }}"
-        current_motd: "{{ ansible_network_resources.banner.motd | default('') }}"
-        current_lldp: "{{ arista_show.stdout[1].lldpNeighbors | default([]) }}"
-        current_intf_status: "{{ arista_show.stdout[2].interfaceStatuses | default({}) }}"
-        current_macs: "{{ arista_show.stdout[3].unicastTable.tableEntries | default(arista_show.stdout[3].unicastUnicastEntries | default([])) }}"
-        current_l2: "{{ ansible_network_resources.l2_interfaces | default([]) }}"
+    - name: Collect switch state with show commands
+      ansible.builtin.include_tasks: tasks/collect_switch_state.yml
 
     - name: Check hostname, EOS version, LLDP, NTP, VLANs, logging, and MOTD
       ansible.builtin.set_fact:
@@ -81,8 +41,7 @@
         observed_status: "{{ current_intf_status[intf_key] | default(current_intf_status[intf_short] | default({})) }}"
         observed_link: "{{ observed_status.linkStatus | default(observed_status.status | default('missing')) }}"
         observed_desc: "{{ observed_status.description | default(observed_status.interfaceDescription | default('')) }}"
-        observed_l2: "{{ current_l2 | selectattr('name', 'equalto', item.switch_port) | list | first | default({}) }}"
-        observed_vlan: "{{ observed_l2.access.vlan | default(observed_status.vlanInformation.vlanId | default('')) }}"
+        observed_vlan: "{{ observed_status.vlanInformation.vlanId | default('') }}"
         observed_lldp: "{{ current_lldp | selectattr('port', 'defined') | selectattr('port', 'search', intf_short ~ '$') | list | first | default({}) }}"
         observed_neighbor: "{{ observed_lldp.neighborDevice | default('none') }}"
         observed_macs: "{{ current_macs | selectattr('interface', 'defined') | selectattr('interface', 'search', intf_short ~ '$') | map(attribute='macAddress') | list }}"

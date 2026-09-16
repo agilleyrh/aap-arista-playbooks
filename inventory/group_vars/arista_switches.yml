@@ -1,8 +1,12 @@
 ---
 # Connection settings for AAP inventory group arista_switches.
-# Username, password, and enable secret come from an AAP Network credential.
+# Username, password, and enable secret come from an AAP Network credential
+# (not a Machine/SSH-key credential). EOS typically offers
+# publickey,keyboard-interactive — Paramiko must not probe publickey first.
 ansible_connection: ansible.netcommon.network_cli
 ansible_network_os: arista.eos.eos
+ansible_network_cli_ssh_type: paramiko
+ansible_paramiko_look_for_keys: false
+ansible_host_key_checking: false
 ansible_become: true
 ansible_become_method: enable
-network_cli_ssh_type: paramiko
