@@ -1,14 +1,10 @@
 # Simple Arista playbooks for Ansible Automation Platform
 
-Traditional Ansible playbooks (no roles) that run as AAP job templates and a
-workflow. Collections come from **Red Hat Automation Hub certified content**.
+Flat playbooks. Inventory and credentials come from AAP, not this repo.
 
-This is the simpler companion to
-[aap-arista-compliance](https://github.com/agilleyrh/aap-arista-compliance).
-
-1. Gather current configuration from Arista EOS switches
-2. Check switch standards and expected bare-metal attachments
-3. Post the current config summary and pass/fail results to Microsoft Teams
+1. Gather **all** EOS facts
+2. Check a few standards against those facts
+3. Post a short summary to Microsoft Teams
 
 ## AAP workflow
 
@@ -20,8 +16,7 @@ Gather Arista Config
 Validate Switch Standards ---- always ----> Notify Microsoft Teams
 ```
 
-Launch **Arista Baremetal Compliance**. Workflow `set_stats` artifacts pass
-config and compliance results into the Teams job.
+Launch a job template with your AAP inventory and a **Network** credential. Connection settings live in the playbook.
 
 | Job template | Playbook | Credential |
 | --- | --- | --- |
@@ -29,26 +24,19 @@ config and compliance results into the Teams job.
 | Validate Switch Standards | `playbooks/validate_switch_standards.yml` | Network |
 | Notify Microsoft Teams | `playbooks/notify_teams.yml` | Microsoft Teams Webhook |
 
+Start with **Gather Arista Config**. It runs `arista.eos.eos_facts` with `gather_subset: all` and `gather_network_resources: all`, then prints `ansible_facts`.
+
+Edit NTP, VLAN, logging, and minimum EOS values in `playbooks/validate_switch_standards.yml` if you use that job.
+
 ## Certified collections
 
-| Collection | Catalog | Used for |
-| --- | --- | --- |
-| [arista.eos](https://catalog.redhat.com/software/collection/arista/eos) | Certified | `eos_command` |
-| [ansible.netcommon](https://catalog.redhat.com/software/collection/ansible/netcommon) | Certified | `network_cli` / Paramiko |
-| [ansible.utils](https://catalog.redhat.com/software/collection/ansible/utils) | Certified | `json_query` |
-| [ansible.controller](https://catalog.redhat.com/software/collection/ansible/controller) | Certified | `aap/setup.yml` on the supported EE |
+| Collection | Used for |
+| --- | --- |
+| [arista.eos](https://catalog.redhat.com/software/collection/arista/eos) | `eos_facts` |
+| [ansible.netcommon](https://catalog.redhat.com/software/collection/ansible/netcommon) | `network_cli` |
+| [ansible.controller](https://catalog.redhat.com/software/collection/ansible/controller) | `aap/setup.yml` on the supported EE |
 
-Teams is notified with `ansible.builtin.uri`. There is no certified Teams collection.
-
-## Layout
-
-```text
-playbooks/     three job-template playbooks, tasks inline
-templates/     Teams Adaptive Card
-vars/          switch standards
-inventory/     example hosts and expected_servers
-aap/setup.yml  creates the AAP project, JTs, and workflow
-```
+Teams is notified with `ansible.builtin.uri`.
 
 ## Execution environment
 
@@ -60,17 +48,11 @@ ansible-builder build \
   -t arista-playbooks-ee:latest
 ```
 
-Push the image to the registry AAP uses, then set `aap_ee_name` to that EE.
-
 ## Controller objects
 
-1. Create a **Network** credential for EOS (username + password, check **Authorize**
-   if you need enable mode). Do not use a Machine/SSH-key credential.
-2. Create a **Microsoft Teams Webhook** credential (`aap/setup.yml` creates the type).
-3. Add switches to group `arista_switches` with `expected_servers` host vars.
-   On that group set `ansible_network_cli_ssh_type: paramiko` and
-   `ansible_paramiko_look_for_keys: false` (already in `aap/setup.yml` / example group_vars).
-4. Run `aap/setup.yml` with a Controller credential:
+1. Put switches in an AAP inventory. Attach a **Network** credential (username + password; check **Authorize** for enable mode).
+2. Create a **Microsoft Teams Webhook** credential (`aap/setup.yml` creates that type).
+3. Optional — create the project, job templates, and workflow:
 
 ```bash
 export CONTROLLER_HOST=https://aap.example.com
@@ -84,15 +66,7 @@ ansible-playbook aap/setup.yml \
   -e aap_ee_name='Arista EE'
 ```
 
-## SSH and gather errors
-
-| Symptom | Cause | What to do |
-| --- | --- | --- |
-| `Connection refused` | Execution node cannot reach SSH on the switch | Confirm `ansible_host`, TCP 22 (or `ansible_port`), routing, and that SSH is enabled |
-| `Access denied for 'none'` / `publickey,keyboard-interactive` | libssh tried a key (or no password) | Attach an AAP **Network** credential with password; keep `ansible_network_cli_ssh_type: paramiko` and `ansible_paramiko_look_for_keys: false` on the inventory group |
-| `wait_for ... got: wait-install` or `neighbor_address` / `peer` warnings | `eos_facts` parsed BGP running-config | Do not set `gather_subset: all`. These playbooks use `eos_command` show output only |
-
-If the group was created in the AAP UI before this change, update the group variables there too — Controller inventory vars override the git examples.
+Job templates prompt for inventory on launch.
 
 ## License
 

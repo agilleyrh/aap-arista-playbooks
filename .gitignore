@@ -2,9 +2,6 @@
 *.retry
 .vault_pass
 vault-password
-inventory/hosts.yml
-inventory/host_vars/*.yml
-!inventory/host_vars/*.example.yml
 
 # Secrets
 .env

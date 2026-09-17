@@ -1,14 +1,30 @@
 ---
-# Create AAP project, inventory, job templates, and workflow.
-# Run this playbook with a Controller credential against the supported EE,
-# which already includes the certified ansible.controller collection.
+# Create AAP project, job templates, and workflow.
+# Inventory and Network credentials come from AAP, not this repo.
+# Run on the supported EE, which already includes ansible.controller.
 
 - name: Bootstrap AAP objects for Arista playbooks
   hosts: localhost
   connection: local
   gather_facts: false
-  vars_files:
-    - vars/defaults.yml
+  vars:
+    controller_host: "{{ lookup('env', 'CONTROLLER_HOST') | default('', true) }}"
+    controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') | default('', true) }}"
+    controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') | default('', true) }}"
+    controller_validate_certs: "{{ lookup('env', 'CONTROLLER_VERIFY_SSL') | default('true', true) }}"
+    aap_organization: Default
+    aap_project_name: Arista Switch Playbooks
+    aap_project_scm_url: https://github.com/agilleyrh/aap-arista-playbooks.git
+    aap_project_scm_branch: main
+    aap_inventory_name: Arista Switches
+    aap_ee_name: ""
+    aap_network_credential: ""
+    aap_teams_credential_type: Microsoft Teams Webhook
+    aap_teams_credential: ""
+    aap_jt_gather: Gather Arista Config
+    aap_jt_validate: Validate Switch Standards
+    aap_jt_notify: Notify Microsoft Teams
+    aap_workflow_name: Arista Baremetal Compliance
   collections:
     - ansible.controller
 
@@ -42,28 +58,14 @@
     - name: Create inventory
       ansible.controller.inventory:
         name: "{{ aap_inventory_name }}"
-        description: Arista switches that attach bare-metal devices
+        description: Attach Arista switches here, or choose another inventory at launch
         organization: "{{ aap_organization }}"
-        state: present
-
-    - name: Create inventory group
-      ansible.controller.group:
-        name: arista_switches
-        inventory: "{{ aap_inventory_name }}"
-        variables:
-          ansible_connection: ansible.netcommon.network_cli
-          ansible_network_os: arista.eos.eos
-          ansible_network_cli_ssh_type: paramiko
-          ansible_paramiko_look_for_keys: false
-          ansible_host_key_checking: false
-          ansible_become: true
-          ansible_become_method: enable
         state: present
 
     - name: Create SCM project
       ansible.controller.project:
         name: "{{ aap_project_name }}"
-        description: Simple Arista switch standards playbooks
+        description: Flat Arista EOS playbooks
         organization: "{{ aap_organization }}"
         scm_type: git
         scm_url: "{{ aap_project_scm_url }}"
@@ -89,7 +91,8 @@
         credentials: "{{ [aap_network_credential] if aap_network_credential | length > 0 else omit }}"
         verbosity: 1
         use_fact_cache: false
-        ask_variables_on_launch: true
+        ask_inventory_on_launch: true
+        ask_credential_on_launch: "{{ aap_network_credential | length == 0 }}"
         state: present
 
     - name: Create Validate Switch Standards job template
@@ -102,11 +105,10 @@
         playbook: playbooks/validate_switch_standards.yml
         execution_environment: "{{ aap_ee_name if aap_ee_name | length > 0 else omit }}"
         credentials: "{{ [aap_network_credential] if aap_network_credential | length > 0 else omit }}"
-        extra_vars:
-          compliance_fail_on_violation: true
         verbosity: 1
         use_fact_cache: false
-        ask_variables_on_launch: true
+        ask_inventory_on_launch: true
+        ask_credential_on_launch: "{{ aap_network_credential | length == 0 }}"
         state: present
 
     - name: Create Notify Microsoft Teams job template
@@ -120,18 +122,15 @@
         execution_environment: "{{ aap_ee_name if aap_ee_name | length > 0 else omit }}"
         credentials: "{{ [aap_teams_credential] if aap_teams_credential | length > 0 else omit }}"
         use_fact_cache: false
-        ask_variables_on_launch: true
+        ask_inventory_on_launch: true
         state: present
 
-    - name: Create compliance workflow
+    - name: Create workflow
       ansible.controller.workflow_job_template:
         name: "{{ aap_workflow_name }}"
-        description: Gather Arista config, validate standards, always notify Teams
+        description: Gather Arista facts, validate, always notify Teams
         organization: "{{ aap_organization }}"
-        inventory: "{{ aap_inventory_name }}"
-        extra_vars:
-          compliance_fail_on_violation: true
-        ask_variables_on_launch: true
+        ask_inventory_on_launch: true
         state: present
         destroy_current_nodes: true
         workflow_nodes:

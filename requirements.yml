@@ -3,12 +3,9 @@
 # Install only from Red Hat Automation Hub, not Galaxy.
 #
 #   ansible.netcommon  https://catalog.redhat.com/software/collection/ansible/netcommon
-#   ansible.utils      https://catalog.redhat.com/software/collection/ansible/utils
 #   arista.eos         https://catalog.redhat.com/software/collection/arista/eos
 collections:
   - name: ansible.netcommon
-    source: https://console.redhat.com/api/automation-hub/content/published/
-  - name: ansible.utils
     source: https://console.redhat.com/api/automation-hub/content/published/
   - name: arista.eos
     source: https://console.redhat.com/api/automation-hub/content/published/

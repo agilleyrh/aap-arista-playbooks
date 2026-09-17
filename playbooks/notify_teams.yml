@@ -1,12 +1,8 @@
 ---
-- name: Notify Microsoft Teams with Arista compliance results
+- name: Notify Microsoft Teams with Arista results
   hosts: localhost
   connection: local
   gather_facts: false
-  vars:
-    config_snapshots: "{{ config_snapshots | default({}) }}"
-    compliance_reports: "{{ compliance_reports | default({}) }}"
-    compliance_failed_hosts: "{{ compliance_failed_hosts | default([]) | unique | list }}"
 
   tasks:
     - name: Require a Teams webhook from the AAP credential
@@ -14,38 +10,37 @@
         that:
           - teams_webhook_url is defined
           - teams_webhook_url | length > 0
-        fail_msg: >-
-          Attach a Microsoft Teams Webhook credential to this job template.
-          aap/setup.yml creates that credential type and injects teams_webhook_url.
+        fail_msg: Attach a Microsoft Teams Webhook credential to this job template.
 
-    - name: Build summary facts
-      ansible.builtin.set_fact:
-        teams_switch_names: "{{ (compliance_reports.keys() | list) if compliance_reports else (config_snapshots.keys() | list) }}"
-        teams_failed_hosts: "{{ compliance_failed_hosts }}"
-        teams_collected_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
-
-    - name: Determine overall status
-      ansible.builtin.set_fact:
-        teams_passed: "{{ teams_failed_hosts | length == 0 and (teams_switch_names | length > 0) }}"
-        teams_checked_count: "{{ teams_switch_names | length }}"
-
-    - name: Render Adaptive Card
-      ansible.builtin.set_fact:
-        teams_payload: "{{ lookup('template', playbook_dir ~ '/../templates/teams_card.json.j2') | from_json }}"
-
-    - name: Post Adaptive Card to Microsoft Teams
+    - name: Post summary to Microsoft Teams
       ansible.builtin.uri:
         url: "{{ teams_webhook_url }}"
         method: POST
         headers:
           Content-Type: application/json
-        body: "{{ teams_payload }}"
+        body:
+          type: message
+          attachments:
+            - contentType: application/vnd.microsoft.card.adaptive
+              content:
+                "$schema": http://adaptivecards.io/schemas/adaptive-card.json
+                type: AdaptiveCard
+                version: "1.4"
+                body:
+                  - type: TextBlock
+                    size: Large
+                    weight: Bolder
+                    text: Arista switch job
+                  - type: FactSet
+                    facts:
+                      - title: Switches
+                        value: "{{ (config_snapshots | default({})).keys() | list | join(', ') | default('none', true) }}"
+                      - title: Models
+                        value: "{{ (config_snapshots | default({})).values() | map(attribute='model') | list | join(', ') | default('n/a', true) }}"
+                      - title: EOS
+                        value: "{{ (config_snapshots | default({})).values() | map(attribute='eos_version') | list | join(', ') | default('n/a', true) }}"
         body_format: json
         status_code:
           - 200
           - 202
       no_log: true
-
-    - name: Confirm Teams delivery
-      ansible.builtin.debug:
-        msg: "Posted Arista compliance card to Microsoft Teams for {{ teams_checked_count }} switch(es)."

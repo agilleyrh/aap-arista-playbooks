@@ -1,41 +1,36 @@
 ---
-- name: Gather current Arista switch configuration
-  hosts: "{{ target_hosts | default('arista_switches') }}"
+- name: Gather all Arista EOS facts
+  hosts: all
   gather_facts: false
-  vars_files:
-    - "{{ playbook_dir }}/../vars/switch_standards.yml"
+  vars:
+    ansible_connection: ansible.netcommon.network_cli
+    ansible_network_os: arista.eos.eos
+    ansible_network_cli_ssh_type: paramiko
+    ansible_paramiko_look_for_keys: false
+    ansible_become: true
+    ansible_become_method: enable
 
   tasks:
-    - name: Collect switch state with show commands
-      ansible.builtin.include_tasks: tasks/collect_switch_state.yml
+    - name: Gather all facts from the switch
+      arista.eos.eos_facts:
+        gather_subset:
+          - all
+        gather_network_resources:
+          - all
 
-    - name: Build a compact snapshot for the AAP workflow
-      ansible.builtin.set_fact:
-        config_snapshot:
-          inventory_hostname: "{{ inventory_hostname }}"
-          hostname: "{{ current_hostname }}"
-          model: "{{ current_model }}"
-          serial: "{{ current_serial }}"
-          eos_version: "{{ current_eos_version }}"
-          lldp_enabled: "{{ current_lldp_enabled }}"
-          ntp_servers: "{{ current_ntp }}"
-          vlans: "{{ current_vlans }}"
-          logging_hosts: "{{ current_logging }}"
-          lldp_neighbors: "{{ current_lldp | ansible.utils.json_query('[].{port: port, neighbor_device: neighborDevice}') }}"
-          collected_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
-
-    - name: Show current config summary
+    - name: Show gathered facts
       ansible.builtin.debug:
-        msg:
-          hostname: "{{ config_snapshot.hostname }}"
-          model: "{{ config_snapshot.model }}"
-          eos_version: "{{ config_snapshot.eos_version }}"
-          ntp_servers: "{{ config_snapshot.ntp_servers }}"
-          vlans: "{{ config_snapshot.vlans }}"
-          lldp_neighbors: "{{ config_snapshot.lldp_neighbors }}"
+        var: ansible_facts
 
-    - name: Publish snapshot for later workflow nodes
+    - name: Publish a compact identity summary for later workflow nodes
       ansible.builtin.set_stats:
         aggregate: true
         data:
+          gathered_hosts: "{{ [inventory_hostname] }}"
           config_snapshots: "{{ { inventory_hostname: config_snapshot } }}"
+      vars:
+        config_snapshot:
+          hostname: "{{ ansible_net_hostname | default(inventory_hostname) }}"
+          model: "{{ ansible_net_model | default('unknown') }}"
+          serial: "{{ ansible_net_serialnum | default('unknown') }}"
+          eos_version: "{{ ansible_net_version | default('unknown') }}"
