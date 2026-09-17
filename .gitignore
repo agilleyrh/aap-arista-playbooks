@@ -10,7 +10,8 @@ vault-password
 *.key
 
 # Collections / EE build artifacts
-collections/
+collections/**
+!collections/requirements.yml
 .ansible/
 context/
 *.tar.gz

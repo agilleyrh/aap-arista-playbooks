@@ -1,0 +1,33 @@
+name: arista
+prefix: clab
+
+mgmt:
+  network: clab-mgmt
+  ipv4-subnet: 172.20.20.0/24
+
+topology:
+  defaults:
+    kind: arista_ceos
+    image: ceos:latest
+    memory: 1024
+
+  nodes:
+    leaf-01:
+      mgmt-ipv4: 172.20.20.11
+      startup-config: startup/leaf-01.cfg
+      ports:
+        - 2201:22
+    leaf-02:
+      mgmt-ipv4: 172.20.20.12
+      startup-config: startup/leaf-02.cfg
+      ports:
+        - 2202:22
+    spine-01:
+      mgmt-ipv4: 172.20.20.13
+      startup-config: startup/spine-01.cfg
+      ports:
+        - 2203:22
+
+  links:
+    - endpoints: ["leaf-01:eth1", "spine-01:eth1"]
+    - endpoints: ["leaf-02:eth1", "spine-01:eth2"]

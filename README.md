@@ -68,6 +68,26 @@ ansible-playbook aap/setup.yml \
 
 Job templates prompt for inventory on launch.
 
+## Local Containerlab (OpenShift Local / CRC)
+
+Containerlab runs **inside the CRC VM** so AAP job pods can SSH to the devices at `192.168.127.2`.
+
+1. Download **cEOSarm-lab** (ARM64) from [Arista software downloads](https://www.arista.com/en/support/software-download) into `~/Downloads`.
+2. Deploy the 3-node lab:
+
+```bash
+chmod +x containerlab/deploy.sh
+./containerlab/deploy.sh
+```
+
+3. In AAP, use inventory **Arista Containerlab** and Network credential **Arista cEOS** (`admin` / `admin`). Launch **Gather Arista Config**.
+
+| Host | `ansible_host` | SSH port |
+| --- | --- | --- |
+| leaf-01 | 192.168.127.2 | 2201 |
+| leaf-02 | 192.168.127.2 | 2202 |
+| spine-01 | 192.168.127.2 | 2203 |
+
 ## License
 
 Apache-2.0

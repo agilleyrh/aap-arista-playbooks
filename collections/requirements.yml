@@ -1,0 +1,5 @@
+---
+# Installed by AAP when this project syncs (org Galaxy credential).
+collections:
+  - name: ansible.netcommon
+  - name: arista.eos
