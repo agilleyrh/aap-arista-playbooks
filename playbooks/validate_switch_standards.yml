@@ -9,6 +9,9 @@
     ansible_paramiko_look_for_keys: false
     ansible_become: true
     ansible_become_method: enable
+    ansible_user: "{{ lookup('env', 'ANSIBLE_NET_USERNAME') | default('admin', true) }}"
+    ansible_password: "{{ lookup('env', 'ANSIBLE_NET_PASSWORD') }}"
+    ansible_become_password: "{{ lookup('env', 'ANSIBLE_NET_AUTH_PASS') | default(lookup('env', 'ANSIBLE_NET_PASSWORD'), true) }}"
     min_eos_version: "4.28.0"
     required_ntp_servers:
       - 192.0.2.10
